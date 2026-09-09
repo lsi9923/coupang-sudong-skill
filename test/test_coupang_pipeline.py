@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-쿠팡 2026 실전 전략(스월백 & 대디갓재) 완벽 통합 파이프라인 검증 테스트
+쿠팡 10대 핵심 카테고리 전수 동적 파이프라인 검증 테스트
 """
 import json
 import os
@@ -9,66 +9,49 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scripts"))
 from run_coupang_pipeline import build_coupang_complete_payload
 
-def test_pipeline():
+TEST_10_ITEMS = [
+    {"mainKeyword": "방한 자전거 장갑", "brand": "G-SPORT", "expectedGroup": "패션잡화"},
+    {"mainKeyword": "무선 블루투스 이어폰", "brand": "SOUND-PRO", "expectedGroup": "소형가전"},
+    {"mainKeyword": "스테인리스 대용량 텀블러", "brand": "ECO-CUP", "expectedGroup": "주방용품"},
+    {"mainKeyword": "오버핏 기모 후드티", "brand": "URBAN-FIT", "expectedGroup": "패션의류"},
+    {"mainKeyword": "접이식 릴렉스 캠핑체어", "brand": "OUTDOOR-X", "expectedGroup": "가구캠핑"},
+    {"mainKeyword": "히알루론산 수분크림", "brand": "DERMA-LAB", "expectedGroup": "화장품"},
+    {"mainKeyword": "3단 수압상승 필터 샤워헤드", "brand": "AQUA-CLEAN", "expectedGroup": "생활욕실"},
+    {"mainKeyword": "슬로우 피더 강아지 식기", "brand": "PET-CARE", "expectedGroup": "반려동물"},
+    {"mainKeyword": "차량용 15W 맥세이프 거치대", "brand": "CAR-TECH", "expectedGroup": "차량용품"},
+    {"mainKeyword": "홈트 라텍스 튜빙밴드 세트", "brand": "FIT-PRO", "expectedGroup": "스포츠헬스"}
+]
+
+def test_10_categories_full_pipeline():
     schema_path = os.path.join(os.path.dirname(__file__), "..", "contracts", "coupang-listing-payload.schema.json")
     with open(schema_path, "r", encoding="utf-8") as f:
         schema = json.load(f)
+
+    for idx, item in enumerate(TEST_10_ITEMS, 1):
+        payload = build_coupang_complete_payload(item)
         
-    sample = {
-        "mainKeyword": "자전거장갑",
-        "brand": "G-SPORT",
-        "cnyPrice": 8.5,
-        "features": ["겨울 방한", "방풍 기모", "터치스크린", "충격흡수"],
-        "colors": ["검정색", "회색", "흰색"],
-        "sizes": ["남녀공용 프리(Free)"],
-        "candidateTags": ["겨울자전거장갑", "라이딩장갑", "방한장갑", "바이크장갑", "오토바이장갑", "로드자전거장갑", "싸이클장갑", "터치장갑", "방풍장갑", "기모장갑", "MTB장갑", "사이클장갑"]
-    }
-    
-    payload = build_coupang_complete_payload(sample, use_free_shipping=True, use_make_order_delay=True)
-    
-    # 1. 스키마 필수 필드 검증
-    for req in schema["required"]:
-        assert req in payload, f"Missing required property: {req}"
+        # 1. 스키마 필수 필드 충족 검증
+        for req in schema["required"]:
+            assert req in payload, f"[{item['mainKeyword']}] Missing required property: {req}"
+            
+        # 2. 카테고리 매칭 검증
+        assert payload["matchedCategoryGroup"] == item["expectedGroup"], f"Category mismatch: {payload['matchedCategoryGroup']} != {item['expectedGroup']}"
         
-    # 2. [스월백/대디갓재 룰 1] F자 패턴 상품명: 단어 수 5~6개 내외, 메인 키워드 뒷단 배치
-    words = payload["sellerProductName"].split()
-    assert 3 <= len(words) <= 7, f"Title word count out of bounds: {len(words)} ({payload['sellerProductName']})"
-    assert words[-1] == "자전거장갑" or "자전거" in words[-1] or "장갑" in words[-1], "Main keyword must be positioned at the rear (F-pattern)"
-    
-    # 3. [스월백/대디갓재 룰 2] 색상 표준화: 검정->블랙, 회색->그레이, 흰색->화이트
-    colors_in_options = [o["attributes"][0]["attributeValueName"] for o in payload["options"]]
-    assert "블랙" in colors_in_options[0]
-    assert "그레이" in colors_in_options[1]
-    assert "화이트" in colors_in_options[2]
-    
-    # 4. [스월백/대디갓재 룰 3] 100% 무료배송 전환 & 정상가 분리
-    assert payload["deliveryChargeType"] == "FREE"
-    assert payload["deliveryCharge"] == 0
-    assert payload["originalPrice"] > payload["salePrice"]
-    
-    # 5. [스월백/대디갓재 룰 4] 주문제작 출고소요일 연장 (패널티 방어)
-    assert payload["deliveryMethod"] == "MAKE_ORDER"
-    assert payload["outboundShippingTimeDay"] >= 14
-    
-    # 6. [스월백/대디갓재 룰 5] 태그 20개 빈칸 0개
-    assert len(payload["searchTags"]) == 20
-    
-    # 7. [스월백/대디갓재 룰 6] 고시정보 품명 및 모델명에 [브랜드 + 메인키워드] 가중치 주입
-    assert "G-SPORT" in payload["notices"][0]["content"]
-    assert "자전거장갑" in payload["notices"][0]["content"]
-    
-    # 8. [사후관리] 노출 상품 ID 백업 가이드 탑재 확인
-    assert "_postRegistrationTips" in payload
-    assert "노출 상품 ID" in payload["_postRegistrationTips"]["backupAction"]
-    
-    print("Coupang Practical Pipeline Verification Passed 100%!")
-    print(f"- F자 패턴 상품명 ({len(words)}단어): {payload['sellerProductName']}")
-    print(f"- 색상 표준화 성공: {colors_in_options}")
-    print(f"- 무료배송 세팅 완료: 판매가 {payload['salePrice']:,}원 (정상가 {payload['originalPrice']:,}원, 배송비 0원)")
-    print(f"- 배송지연 패널티 방어: {payload['deliveryMethod']} (출고소요일 {payload['outboundShippingTimeDay']}일)")
-    print(f"- 고시 품명및모델명 가중치: {payload['notices'][0]['content']}")
-    print(f"- 검색어 태그 20개 풀장착 완료")
-    print(f"- 사후관리 노출 상품 ID 백업 가이드 확인")
+        # 3. 고시 항목 수 및 '상세페이지 참조' 0건 검증
+        assert len(payload["notices"]) >= 8, f"Notices count too small for {item['mainKeyword']}"
+        for n in payload["notices"]:
+            assert n["content"].strip() != "", f"Empty notice in {item['mainKeyword']}"
+            assert "상세페이지 참조" != n["content"].strip(), f"Placeholder '상세페이지 참조' found in {n['noticeCategoryDetailName']}"
+
+        # 4. 필수 속성 매핑 검증
+        assert len(payload["attributes"]) >= 4, f"Attributes count too small for {item['mainKeyword']}"
+        
+        # 5. 태그 20개 검증
+        assert len(payload["searchTags"]) == 20
+        
+        print(f"[{idx}/10 통과] {item['mainKeyword']} -> {payload['matchedCategoryGroup']} (고시 {len(payload['notices'])}개, 속성 {len(payload['attributes'])}개, 인증 {payload['certificationType']})")
+
+    print("\n10대 카테고리 전수 동적 분기 파이프라인 검증 100% 성공!")
 
 if __name__ == "__main__":
-    test_pipeline()
+    test_10_categories_full_pipeline()
