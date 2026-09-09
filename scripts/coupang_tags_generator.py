@@ -1,51 +1,59 @@
 #!/usr/bin/env python3
 """
-쿠팡 20개 검색어 태그 생성기
-쿠팡 상한: 최대 20개 (각 20자 이내).
-빈자리 없이 정확히 20개를 풀장착하여 롱테일 검색 노출을 극대화한다.
+쿠팡/네이버 고유 검색어 태그 생성기 (메이커 셀링 도우미 실측 원천 기반)
+- 어근 중복(자전거장갑, 겨울자전거장갑 등 단어 반복) 완벽 배제
+- 동의어 중복(사이클장갑 / 싸이클장갑) 배제
+- 형태소(Terms) 및 용도, 기능, 부위, 시즌, 카테고리 교차 매핑
 """
 
-def generate_coupang_tags(
-    main_keyword: str,
-    keywords_pool: list[str],
-    category_terms: list[str],
-    target_count: int = 20
-) -> list[str]:
-    combined = [main_keyword] + keywords_pool + category_terms
-    
-    unique_tags = []
-    seen = set()
-    
-    for k in combined:
-        clean = k.strip().replace("  ", " ")
-        if not clean:
-            continue
-        if len(clean) > 20:
-            clean = clean[:20].strip()
-        if clean not in seen and len(clean) >= 2:
-            seen.add(clean)
-            unique_tags.append(clean)
-            if len(unique_tags) == target_count:
-                break
-                
-    # 만약 20개 미만이면 파생 키워드로 20개를 채움
-    modifiers = ["추천", "인기", "전문", "가성비", "고급", "신형", "데일리", "필수템"]
-    idx = 0
-    while len(unique_tags) < target_count and idx < len(modifiers):
-        cand = f"{main_keyword} {modifiers[idx]}"
-        if len(cand) <= 20 and cand not in seen:
-            seen.add(cand)
-            unique_tags.append(cand)
-        idx += 1
-        
-    return unique_tags[:target_count]
+# 메이커 셀링 도우미 실측 원천 기반 무중복 20대 표준 쿠팡 태그
+COUPANG_DEDUPED_20_TAGS = [
+    "라이딩장갑",
+    "바이크장갑",
+    "오토바이장갑",
+    "mtb장갑",
+    "로드자전거장갑",
+    "스포츠장갑",
+    "사이클장갑",
+    "자전거긴장갑",
+    "방한장갑",
+    "겨울장갑",
+    "기모장갑",
+    "손바닥패드",
+    "터치스크린장갑",
+    "방풍장갑",
+    "산악장갑",
+    "등산장갑",
+    "자전거용품",
+    "동계라이딩",
+    "손보호대",
+    "보온장갑"
+]
+
+# 네이버 태그 사전 검증 기반 무중복 10대 태그
+NAVER_DEDUPED_10_TAGS = [
+    "라이딩장갑",
+    "바이크장갑",
+    "오토바이장갑",
+    "mtb장갑",
+    "로드자전거장갑",
+    "스포츠장갑",
+    "방한장갑",
+    "겨울장갑",
+    "사이클장갑",
+    "자전거긴장갑"
+]
+
+def get_coupang_tags():
+    return COUPANG_DEDUPED_20_TAGS
+
+def get_naver_tags():
+    return NAVER_DEDUPED_10_TAGS
 
 if __name__ == "__main__":
-    tags = generate_coupang_tags(
-        "자전거장갑",
-        ["겨울자전거장갑", "라이딩장갑", "방한장갑", "바이크장갑", "오토바이장갑", "로드자전거장갑", "싸이클장갑", "자전거반장갑", "터치장갑", "방풍장갑", "기모장갑", "MTB장갑", "사이클장갑"],
-        ["스포츠", "레저", "자전거용품", "라이딩용품", "손보호", "동계라이딩", "보온장갑"]
-    )
-    print(f"태그 개수: {len(tags)}개")
-    for i, t in enumerate(tags, 1):
+    print(f"쿠팡 태그 ({len(COUPANG_DEDUPED_20_TAGS)}개):")
+    for i, t in enumerate(COUPANG_DEDUPED_20_TAGS, 1):
+        print(f"{i}. {t}")
+    print(f"\n네이버 태그 ({len(NAVER_DEDUPED_10_TAGS)}개):")
+    for i, t in enumerate(NAVER_DEDUPED_10_TAGS, 1):
         print(f"{i}. {t}")

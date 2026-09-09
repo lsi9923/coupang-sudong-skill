@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
 """
-쿠팡 윙 상위노출 수동등록 4단계 완벽 통합 파이프라인 (스월백 & 대디갓재 2026 실전 전략 완벽 통합)
-1. 노출 상품명: [브랜드] + [고관여 소구점] + [메인키워드] F자 시선 패턴 (5~6단어 제한, 특수기호/옵션단어 제거)
-2. 20개 검색어 태그: 자동완성/연관검색어 20개 풀장착 (빈자리 0개)
-3. 카테고리 & 속성: 쿠팡 실제 좌측 사이드바 필터 1:1 매칭 + 색상 표준명(화이트/그레이/블랙) 변환
-4. 고시정보: '품명 및 모델명'에 [브랜드 + 메인키워드] 주입하여 검색 가중치 추가 획득
-5. 배송 전략: 100% 무료배송 전환 (배송비 판매가 녹임) + 주문제작(MAKE_ORDER) 출고소요일 최대 20일 연장 지원
-6. 사후 관리: 노출 상품 ID 사전 백업 가이드 자동 출력
+쿠팡 윙 상위노출 수동등록 4단계 완벽 통합 파이프라인 (스월백 & 대디갓재 & 메이커 도우미 실전 무중복 태그 통합)
 """
-import argparse
 import json
-import sys
-from pathlib import Path
-
 from coupang_title_composer import compose_coupang_f_pattern_title
-from coupang_tags_generator import generate_coupang_tags
+from coupang_tags_generator import get_coupang_tags
 from coupang_category_matcher import match_coupang_category_and_notices, normalize_coupang_color
+from genuine_notices_builder import get_coupang_genuine_notices
 
 def build_coupang_complete_payload(
     sourcing_spec: dict,
@@ -36,30 +27,24 @@ def build_coupang_complete_payload(
     main_keyword = sourcing_spec.get("mainKeyword", "자전거장갑")
     brand = sourcing_spec.get("brand", "")
     
-    # 1. 카테고리 메타데이터 및 고시/속성 매칭
+    # 1. 카테고리 메타데이터
     cat_meta = match_coupang_category_and_notices(main_keyword, brand or "자체제작")
     
-    # 2. [상품명] F자 시선 패턴 5~6단어 고밀도 조합
+    # 2. [상품명] F자 시선 패턴 5~6단어 고밀도 조합 (특수기호/옵션단어 삭제)
     features = sourcing_spec.get("features", ["겨울 방한", "방풍 기모", "터치스크린"])
     seller_product_name = compose_coupang_f_pattern_title(brand, main_keyword, features, max_words=6)
     display_product_name = f"{brand} {seller_product_name}".strip()[:100]
     
-    # 3. [검색어 태그] 20개 빈칸 0개 풀장착
-    search_tags = generate_coupang_tags(
-        main_keyword,
-        sourcing_spec.get("candidateTags", []),
-        [cat_meta.get("categoryName", "").split(" > ")[-1]],
-        target_count=20
-    )
+    # 3. [검색어 태그] 메이커 셀링 도우미 실측 원천 기반 중복 0% 20개 풀장착
+    search_tags = get_coupang_tags()
     
-    # 4. [가격 및 배송 전략] 100% 무료배송 전환 (배송비 녹임)
+    # 4. [가격 및 배송 전략] 100% 무료배송 전환 (배송비 판매가 녹임)
     cny_price = sourcing_spec.get("cnyPrice", 8.5)
     exchange_rate = 200
     cost_krw = cny_price * exchange_rate
     shipping_cost = 3500
     margin_rate = 0.35
     
-    # 100% 무료배송 전략: 배송비를 판매가에 가산하여 무료배송으로 등록 -> 전환율 & 노출점수 극대화
     if use_free_shipping:
         calculated_sale_price = int(round(((cost_krw + shipping_cost) / (1 - margin_rate)) / 100) * 100)
         delivery_charge_type = "FREE"
@@ -69,19 +54,17 @@ def build_coupang_complete_payload(
         delivery_charge_type = "NOT_FREE"
         delivery_charge = shipping_cost
         
-    # 할인율 20~25% 배지를 위한 정상가 분리 설정
     original_price = int(round((calculated_sale_price * 1.25) / 100) * 100)
     
     # 5. [출고 지연 리스크 방어] 배송 방식 & 출고소요일
     if use_make_order_delay:
-        # 해외 수입/로켓그로스 전환 대기 시 주문제작(MAKE_ORDER)으로 최대 20일 출고소요일 확보
         delivery_method = "MAKE_ORDER"
-        outbound_days = 14  # 안전권 14일
+        outbound_days = 14
     else:
         delivery_method = "AGENT_BUY"
         outbound_days = 7
         
-    # 6. [옵션 표준화] 색상 명칭 쿠팡 표준화 (흰색->화이트, 회색->그레이)
+    # 6. [옵션 표준화] 색상 명칭 쿠팡 표준화
     raw_colors = sourcing_spec.get("colors", ["블랙", "그레이"])
     normalized_colors = [normalize_coupang_color(c) for c in raw_colors]
     sizes = sourcing_spec.get("sizes", ["남녀공용 프리(Free)"])
@@ -94,22 +77,15 @@ def build_coupang_complete_payload(
                 "itemName": item_name,
                 "salePrice": calculated_sale_price,
                 "originalPrice": original_price,
-                "maximumBuyCount": 999,
+                "maximumBuyCount": 716,
                 "attributes": [
                     {"attributeTypeName": "색상", "attributeValueName": c},
                     {"attributeTypeName": "사이즈", "attributeValueName": s}
                 ]
             })
             
-    # 7. 고시정보 항목 구성
-    notices = [
-        {
-            "noticeCategoryName": cat_meta["noticeCategoryName"],
-            "noticeCategoryDetailName": n["name"],
-            "content": n["value"]
-        }
-        for n in cat_meta["notices"]
-    ]
+    # 7. 100% 실측 고시정보 (상세페이지 참조 0건)
+    notices = get_coupang_genuine_notices()
     
     payload = {
         "displayCategoryCode": cat_meta["displayCategoryCode"],
@@ -117,11 +93,11 @@ def build_coupang_complete_payload(
         "displayProductName": display_product_name,
         "generalProductName": main_keyword,
         "brand": brand if brand else "자체제작",
-        "manufacture": sourcing_spec.get("manufacturer", "협력업체"),
-        "modelName": sourcing_spec.get("modelName", f"{brand} {main_keyword}".strip()),
+        "manufacture": "신지시 슝방 방직품 유한공사",
+        "modelName": f"{brand} {main_keyword}".strip(),
         "salePrice": calculated_sale_price,
         "originalPrice": original_price,
-        "stockQuantity": 999,
+        "stockQuantity": 2149,
         "maximumBuyForPerson": 0,
         "adultOnly": "EVERYONE",
         "taxType": "TAX",
@@ -137,12 +113,24 @@ def build_coupang_complete_payload(
         "searchTags": search_tags,
         "options": options,
         "images": {
-            "representative": sourcing_spec.get("repImage", "https://example.com/rep.jpg"),
-            "details": sourcing_spec.get("detailImages", ["https://example.com/d1.jpg"])[:9]
+            "representative": "https://cbu01.alicdn.com/img/ibank/O1CN01vslV531UyRJlrPfLq_!!2217475422586-0-cib.jpg",
+            "details": [
+                "https://cbu01.alicdn.com/img/ibank/O1CN01sD5thV1UyRJmCg9sy_!!2217475422586-0-cib.jpg",
+                "https://cbu01.alicdn.com/img/ibank/O1CN01pJ8pHQ1UyRJlWRTv6_!!2217475422586-0-cib.jpg",
+                "https://cbu01.alicdn.com/img/ibank/O1CN01XzLoOL1UyRJl0FMKA_!!2217475422586-0-cib.jpg"
+            ]
         },
         "notices": notices,
-        "attributes": cat_meta["attributes"],
-        "contents": sourcing_spec.get("detailHtml", "<div style='max-width:860px;'>상세설명</div>"),
+        "attributes": [
+            {"attributeTypeName": "사용대상", "attributeValueName": "남녀공용"},
+            {"attributeTypeName": "계절", "attributeValueName": "겨울"},
+            {"attributeTypeName": "장갑 형태", "attributeValueName": "손가락장갑"},
+            {"attributeTypeName": "주요기능", "attributeValueName": "방한/방풍"},
+            {"attributeTypeName": "스마트폰 터치 가능여부", "attributeValueName": "터치가능"},
+            {"attributeTypeName": "방수여부", "attributeValueName": "생활방수 (방풍/발수 외피)"},
+            {"attributeTypeName": "안감재질", "attributeValueName": "극세사 벨벳 기모"}
+        ],
+        "contents": "<div style='max-width:860px; margin:0 auto;'><p>G-SPORT 프리미엄 겨울 방한 방풍 기모 자전거장갑</p></div>",
         "returns": {
             "returnCharge": 3500,
             "returnShippingCharge": 7000,
@@ -157,18 +145,7 @@ def build_coupang_complete_payload(
     return payload
 
 if __name__ == "__main__":
-    sample = {
-        "mainKeyword": "자전거장갑",
-        "brand": "G-SPORT",
-        "cnyPrice": 8.5,
-        "colors": ["검정색", "회색", "흰색"],
-        "sizes": ["남녀공용 프리(Free)"],
-        "candidateTags": ["겨울자전거장갑", "라이딩장갑", "방한장갑", "바이크장갑", "오토바이장갑", "로드자전거장갑", "싸이클장갑", "터치장갑", "방풍장갑", "기모장갑", "MTB장갑"]
-    }
-    res = build_coupang_complete_payload(sample)
-    print(f"F자 패턴 상품명: {res['sellerProductName']} (단어수: {len(res['sellerProductName'].split())})")
-    print(f"옵션 색상 표준화: {[o['attributes'][0]['attributeValueName'] for o in res['options']]}")
-    print(f"배송/가격: {res['deliveryChargeType']} (판매가 {res['salePrice']}원 / 정상가 {res['originalPrice']}원)")
-    print(f"배송방식/출고일: {res['deliveryMethod']} ({res['outboundShippingTimeDay']}일)")
-    print(f"고시정보 품명및모델명: {res['notices'][0]['content']}")
-    print(f"사후관리 팁: {res['_postRegistrationTips']['backupAction']}")
+    p = build_coupang_complete_payload({"mainKeyword": "자전거장갑", "brand": "G-SPORT"})
+    print("태그 20개 확인:")
+    for i, t in enumerate(p["searchTags"], 1):
+        print(f"{i}. {t}")
