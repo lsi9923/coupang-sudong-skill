@@ -6,7 +6,6 @@
 - 형태소(Terms) 및 용도, 기능, 부위, 시즌, 카테고리 교차 매핑
 """
 
-# 메이커 셀링 도우미 실측 원천 기반 무중복 20대 표준 쿠팡 태그
 COUPANG_DEDUPED_20_TAGS = [
     "라이딩장갑",
     "바이크장갑",
@@ -30,7 +29,6 @@ COUPANG_DEDUPED_20_TAGS = [
     "보온장갑"
 ]
 
-# 네이버 태그 사전 검증 기반 무중복 10대 태그
 NAVER_DEDUPED_10_TAGS = [
     "라이딩장갑",
     "바이크장갑",
@@ -50,10 +48,35 @@ def get_coupang_tags():
 def get_naver_tags():
     return NAVER_DEDUPED_10_TAGS
 
+def generate_coupang_tags(keyword: str, related_queries: list, manu_tags: list, target_count: int = 20) -> list:
+    """실시간 크롤링된 연관검색어/태그에서 중복 어근을 배제하고 20개를 엄선하여 반환"""
+    candidates = related_queries + manu_tags + COUPANG_DEDUPED_20_TAGS
+    unique = []
+    seen = set()
+    
+    # 1. 원천 후보군 순회 (너무 길거나 공백, 반복되는 동일 단어 배제)
+    for c in candidates:
+        t = str(c).strip().replace(" ", "")
+        if not t or len(t) < 2 or len(t) > 20:
+            continue
+        # 어근 도배 배제 (자전거장갑이 이미 있으면 다른 변형어 필터)
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+            if len(unique) >= target_count:
+                break
+                
+    # 2. 20개가 모자라면 표준 무중복 태그 풀에서 보충
+    for def_t in COUPANG_DEDUPED_20_TAGS:
+        if len(unique) >= target_count:
+            break
+        clean_def = def_t.replace(" ", "")
+        if clean_def not in seen:
+            seen.add(clean_def)
+            unique.append(def_t)
+            
+    return unique[:target_count]
+
 if __name__ == "__main__":
-    print(f"쿠팡 태그 ({len(COUPANG_DEDUPED_20_TAGS)}개):")
-    for i, t in enumerate(COUPANG_DEDUPED_20_TAGS, 1):
-        print(f"{i}. {t}")
-    print(f"\n네이버 태그 ({len(NAVER_DEDUPED_10_TAGS)}개):")
-    for i, t in enumerate(NAVER_DEDUPED_10_TAGS, 1):
-        print(f"{i}. {t}")
+    print(f"쿠팡 태그 20개: {get_coupang_tags()}")
+    print(f"네이버 태그 10개: {get_naver_tags()}")
